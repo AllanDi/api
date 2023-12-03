@@ -10,7 +10,7 @@ public class MedicoController {
 
     @PostMapping
     public void cadastrar() {
-        return "teste";
+        //return "teste";
 
     }
 
