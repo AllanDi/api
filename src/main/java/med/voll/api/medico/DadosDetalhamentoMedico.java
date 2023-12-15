@@ -4,6 +4,7 @@ import med.voll.api.endereco.Endereco;
 
 public record DadosDetalhamentoMedico(
         Long id,
+        boolean ativo,
         String nome,
         String email,
         String crm,
@@ -15,6 +16,7 @@ public record DadosDetalhamentoMedico(
     public DadosDetalhamentoMedico(Medico medico) {
         this(
                 medico.getId(),
+                medico.isAtivo(),
                 medico.getNome(),
                 medico.getEmail(),
                 medico.getCrm(),
