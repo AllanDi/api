@@ -19,11 +19,6 @@ public class SecurityFilter extends OncePerRequestFilter {
 
         var tokenJWT = recuperarToken(request);
 
-        System.out.println(tokenJWT);
-
-
-
-
         filterChain.doFilter(request, response);
     }
 
