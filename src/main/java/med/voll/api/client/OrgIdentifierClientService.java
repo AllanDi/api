@@ -2,6 +2,7 @@ package med.voll.api.client;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import kong.unirest.HttpResponse;
 import kong.unirest.Unirest;
 import lombok.extern.log4j.Log4j;
@@ -10,6 +11,12 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
+import java.util.stream.Stream;
 
 @Service
 @Log4j
@@ -49,10 +56,10 @@ public class OrgIdentifierClientService {
 
         String respBody =
                 Unirest.get(urlDiretorio)
-                .proxy(proxyUrl, proxyPort)
-                .asString()
-                .ifFailure(this::emptyOrgListCache)
-                .getBody();
+                        .proxy(proxyUrl, proxyPort)
+                        .asString()
+                        .ifFailure(this::emptyOrgListCache)
+                        .getBody();
 
         return gson.fromJson(respBody, JsonArray.class);
     }
@@ -75,26 +82,117 @@ public class OrgIdentifierClientService {
                 .stream()
                 .filter(org -> {
 
-            var orgObj = org.getAsJsonObject();
+                    var orgObj = org.getAsJsonObject();
 
-            return orgObj
-                    .get("OrganisationName")
-                    .getAsString()
-                    .equalsIgnoreCase(orgBrand)
-                    || orgObj.get("LegalEntityName").getAsString().equalsIgnoreCase(orgBrand)
-                    || orgObj.get("RegisteredName").getAsString().equalsIgnoreCase(orgBrand)
-                    || orgObj.get("AuthorisationServers").getAsJsonArray().asList().stream()
-                    .anyMatch(
-                            auth ->
-                                    auth.getAsJsonObject()
-                                            .get("CustomerFriendName")
-                                            .getAsString()
-                                            .equalsIgnoreCase(orgBrand));
+                    return orgObj
+                            .get("OrganisationName")
+                            .getAsString()
+                            .equalsIgnoreCase(orgBrand)
+                            || orgObj.get("LegalEntityName").getAsString().equalsIgnoreCase(orgBrand)
+                            || orgObj.get("RegisteredName").getAsString().equalsIgnoreCase(orgBrand)
+                            || orgObj.get("AuthorisationServers").getAsJsonArray().asList().stream()
+                            .anyMatch(
+                                    auth ->
+                                            auth.getAsJsonObject()
+                                                    .get("CustomerFriendName")
+                                                    .getAsString()
+                                                    .equalsIgnoreCase(orgBrand));
 
-        }).findFirst().orElse(null);
+                }).findFirst().orElse(null);
 
         return (organization != null)
                 ? organization.getAsJsonObject().get("OrganisationId").getAsString()
+                : null;
+    }
+
+    @Cacheable(value = "orgIdsCache")
+    public String getIdentifierByBrand(JsonArray orgList, String orgBrand) {
+        var organization =
+                orgList.asList().stream()
+                        .filter(
+                                org ->
+                                        org.getAsJsonObject()
+                                                .get("RegistrationNumber")
+                                                .getAsString()
+                                                .equalsIgnoreCase(orgBrand))
+                        .findFirst()
+                        .orElse(null);
+        return (organization != null)
+                ? organization.getAsJsonObject().get("OrganizationId").getAsString()
+                : null;
+    }
+
+    @Cacheable(value = "orgIdsCache")
+    public String getServerIdentifierByHostMatch(JsonArray orgList, String serverHost) {
+        var organization =
+                orgList.asList().stream()
+                        .filter(
+                                org -> {
+                                    var pattern = Pattern.compile(serverHost);
+                                    var matcher = pattern.matcher(org.toString());
+                                    return matcher.find();
+                                })
+                        .findFirst()
+                        .orElse(null);
+        return (organization != null)
+                ? organization.getAsJsonObject().get("OrganizationId").getAsString()
+                : null;
+    }
+
+    @Cacheable(value = "orgIdsCache")
+    public String getAuthServerId(JsonArray orgList, String url, String brandName) {
+
+        Stream<JsonElement> authServerList =
+                orgList.asList().stream()
+                        .map(org -> org.getAsJsonObject().get("AuthorisationServers").getAsJsonArray().asList())
+                        .flatMap(Collection::stream);
+        if (brandName.isBlank()) {
+            JsonElement authServer =
+                    authServerList
+                            .filter(
+                                    org -> {
+                                        var pattern = Pattern.compile(url.replaceAll("[\\{\\}]", "\\\\$0"));
+                                        var matcher = pattern.matcher(org.toString());
+                                        return matcher.find();
+                                    })
+                            .findFirst()
+                            .orElse(null);
+
+            return (authServer != null)
+                    ? authServer.getAsJsonObject().get("AuthorisationServerId").getAsString()
+                    : null;
+        } else {
+            return filterBrandName(authServerList, url, brandName);
+        }
+    }
+
+    public String filterBrandName(Stream<JsonElement> authServerList, String url, String brandName) {
+        Map<String, String> brands = new HashMap();
+        brands.put("api-api-seguros", "api api seguros");
+        brands.put("api-api-previdencia", "api api previdencia");
+        brands.put("evidencia", "Evidencia");
+        brands.put("api-capitalização", "api capitalização");
+
+        String customerFriendlyName = brands.get(brandName);
+
+        JsonElement authServer =
+                authServerList
+                        .filter(
+                                org -> {
+                                    var pattern = Pattern.compile(url.replaceAll("[\\{\\}]", "\\\\$0"));
+                                    var matcher = pattern.matcher(org.toString());
+                                    return matcher.find();
+                                })
+                        .filter(
+                                org ->
+                                        org.getAsJsonObject()
+                                                .get("RegistrationNumber")
+                                                .getAsString()
+                                                .equalsIgnoreCase(customerFriendlyName))
+                        .findFirst()
+                        .orElse(null);
+        return (authServer != null)
+                ? authServer.getAsJsonObject().get("AuthorisationServerId").getAsString()
                 : null;
     }
 
