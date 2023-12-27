@@ -93,7 +93,9 @@ public class OrgIdentifierClientService {
 
         }).findFirst().orElse(null);
 
-        return (organization != null) ? organization.getAsJsonObject().get("OrganisationId").getAsString() : null;
+        return (organization != null)
+                ? organization.getAsJsonObject().get("OrganisationId").getAsString()
+                : null;
     }
 
 
